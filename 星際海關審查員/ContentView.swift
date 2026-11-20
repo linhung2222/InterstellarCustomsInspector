@@ -1,25 +1,41 @@
 import SwiftUI
 
+/// 《星際海關審查員》主遊戲畫面：整合頂部狀態列、今日緊急指令速報、旅客電子護照終端機、加密行賄面板與裁決控制區
 struct ContentView: View {
+    /// 遊戲核心狀態與邏輯控制器
     @State private var viewModel = GameViewModel()
+    /// 控制是否彈出「星際海關法規手冊」視窗
     @State private var isShowingRulebook = false
+    /// 控制高稽查風險（>= 50%）時的紅色膠囊呼吸閃爍動畫狀態
+    @State private var isAuditWarningBlinking = false
 
-    // 科幻終端機配色定義
+    // MARK: - 科幻終端機主題配色定義
+    /// 終端機底層深色背景
     private let terminalBackground = Color(red: 0.03, green: 0.05, blue: 0.09)
+    /// 資訊卡片深藍灰底色
     private let cardBackground = Color(red: 0.07, green: 0.11, blue: 0.17)
+    /// 霓虹青色（主框線、科技標題、物種圖示）
     private let neonCyan = Color(red: 0.00, green: 0.90, blue: 0.96)
+    /// 霓虹琥珀金（分數、警告提示、行賄通訊框線）
     private let neonAmber = Color(red: 1.00, green: 0.73, blue: 0.16)
+    /// 霓虹警示紅（拒簽按鈕、違規警報、失誤紅燈）
     private let neonRed = Color(red: 1.00, green: 0.27, blue: 0.36)
+    /// 霓虹翠綠色（核准按鈕、星際幣餘額、合規狀態）
     private let neonGreen = Color(red: 0.15, green: 0.92, blue: 0.55)
+    /// 霓虹紫羅蘭（非有機體標籤、檢舉按鈕、暫停目的高亮）
     private let neonPurple = Color(red: 0.72, green: 0.45, blue: 1.00)
+    /// 暗金警告色（私下收賄按鈕漸層）
+    private let darkGoldWarning = Color(red: 0.88, green: 0.65, blue: 0.12)
 
+    /// 主畫面視圖結構
     var body: some View {
         ZStack {
+            // 全域深色終端機背景
             terminalBackground
                 .ignoresSafeArea()
 
             VStack(spacing: 10) {
-                // 1. 頂部狀態列（Day、Score、3 顆失誤紅燈、法規手冊按鈕）
+                // 1. 頂部狀態列（Day、Score、Credits、3 顆失誤紅燈、聲望、稽查風險、法規手冊按鈕）
                 topStatusBar
 
                 ScrollView(.vertical, showsIndicators: false) {
@@ -27,10 +43,17 @@ struct ContentView: View {
                         // 2. 今日速報橫幅（封鎖星系、禁運物品、暫停目的、防疫狀態）
                         dailyDirectiveBanner
 
-                        // 3. 中央電子護照終端機（雙欄網格呈現完整旅客數據）
+                        // 3. 中央電子護照終端機（雙欄網格呈現完整旅客 12 項數據與硬體掃描警示）
                         travelerPassportTerminal
+
+                        // 3.5 加密行賄對話面板（當違規旅客提出行賄時於電子護照下方動態滑出）
+                        if let offer = viewModel.currentTraveler.bribeOffer {
+                            encryptedBribePanel(offer: offer)
+                                .transition(.move(edge: .top).combined(with: .opacity))
+                        }
                     }
                     .padding(.vertical, 2)
+                    .animation(.spring(duration: 0.35), value: viewModel.currentTraveler.id)
                 }
 
                 // 4. 底部判決區（上一題對錯原因 + 觸發層級 + 拒簽/核准按鈕）
@@ -39,23 +62,36 @@ struct ContentView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 8)
 
-            // 5. Game Over 結算遮罩
+            // 5. Game Over 結算遮罩（當累積 3 次失誤或貪污遭逮捕時覆蓋全畫面）
             if viewModel.isGameOver {
                 gameOverOverlay
             }
         }
         .preferredColorScheme(.dark)
+        .onAppear {
+            // 啟動高稽查風險膠囊的永久呼吸閃爍動畫
+            withAnimation(.easeInOut(duration: 0.65).repeatForever(autoreverses: true)) {
+                isAuditWarningBlinking = true
+            }
+        }
+        // 彈出星際海關法規手冊視窗
         .sheet(isPresented: $isShowingRulebook) {
             RulebookSheetView(
                 regulation: viewModel.currentRegulation,
                 day: viewModel.day
             )
         }
+        // 彈出每日結算與終端機升級商店視窗（禁止手勢下拉關閉以確保完成跨日流程）
+        .sheet(isPresented: $viewModel.isShowingDailySummary) {
+            DailySummaryShopView(viewModel: viewModel)
+                .interactiveDismissDisabled(true)
+        }
     }
 
     // MARK: - 1. 頂部狀態列
+    /// 顯示海關部門名稱、已安裝模組圖示、當日配額、天數、積分、星際幣、失誤紅燈、法規手冊按鈕與聲望/風險膠囊列
     private var topStatusBar: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "shield.lefthalf.filled.badge.checkmark")
@@ -66,22 +102,41 @@ struct ContentView: View {
                         .lineLimit(1)
                 }
                 Spacer()
+
+                // 已安裝永久掃描裝備迷你圖示列（亮青色代表已安裝啟用）
+                HStack(spacing: 5) {
+                    ForEach(UpgradeItem.allCases.filter { !$0.isConsumable }) { item in
+                        let isEquipped = viewModel.purchasedUpgrades.contains(item)
+                        Image(systemName: item.iconName)
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(isEquipped ? neonCyan : .white.opacity(0.2))
+                            .padding(4)
+                            .background(isEquipped ? neonCyan.opacity(0.18) : Color.white.opacity(0.05))
+                            .clipShape(RoundedRectangle(cornerRadius: 5))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 5)
+                                    .stroke(isEquipped ? neonCyan.opacity(0.6) : .clear, lineWidth: 1)
+                            )
+                    }
+                }
+
+                // 當日已審查旅客人數與單日配額進度
                 Text("執勤配額 \(viewModel.inspectedCountInDay)/\(viewModel.quotaPerDay)")
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(.secondary)
             }
 
-            HStack(spacing: 8) {
-                // Day 指標
+            HStack(spacing: 6) {
+                // Day 天數指標
                 HStack(spacing: 4) {
                     Text("DAY")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Text("\(viewModel.day)")
-                        .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 15, weight: .heavy, design: .monospaced))
                         .foregroundStyle(neonCyan)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -90,16 +145,16 @@ struct ContentView: View {
                         .stroke(neonCyan.opacity(0.35), lineWidth: 1)
                 )
 
-                // Score 指標
+                // Score 總積分指標
                 HStack(spacing: 4) {
                     Text("SCORE")
                         .font(.system(size: 10, weight: .bold, design: .monospaced))
                         .foregroundStyle(.secondary)
                     Text(String(format: "%04d", viewModel.score))
-                        .font(.system(size: 16, weight: .heavy, design: .monospaced))
+                        .font(.system(size: 15, weight: .heavy, design: .monospaced))
                         .foregroundStyle(neonAmber)
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -108,13 +163,31 @@ struct ContentView: View {
                         .stroke(neonAmber.opacity(0.35), lineWidth: 1)
                 )
 
-                // 3 顆失誤紅燈
-                HStack(spacing: 6) {
+                // 可用星際幣（฿）餘額指標
+                HStack(spacing: 3) {
+                    Text("฿")
+                        .font(.system(size: 12, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(neonGreen)
+                    Text("\(viewModel.credits)")
+                        .font(.system(size: 15, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(neonGreen)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background(cardBackground)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(neonGreen.opacity(0.35), lineWidth: 1)
+                )
+
+                // 3 顆失誤警告紅燈（亮起代表已發生的失誤次數）
+                HStack(spacing: 5) {
                     ForEach(0..<viewModel.maxStrikes, id: \.self) { index in
                         let isTriggered = index < viewModel.strikes
                         Circle()
                             .fill(isTriggered ? neonRed : Color.white.opacity(0.12))
-                            .frame(width: 12, height: 12)
+                            .frame(width: 11, height: 11)
                             .overlay(
                                 Circle()
                                     .stroke(isTriggered ? neonRed : Color.white.opacity(0.3), lineWidth: 1.5)
@@ -122,7 +195,7 @@ struct ContentView: View {
                             .shadow(color: isTriggered ? neonRed.opacity(0.9) : .clear, radius: 5)
                     }
                 }
-                .padding(.horizontal, 10)
+                .padding(.horizontal, 8)
                 .padding(.vertical, 8)
                 .background(cardBackground)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -137,15 +210,12 @@ struct ContentView: View {
                 Button {
                     isShowingRulebook = true
                 } label: {
-                    HStack(spacing: 5) {
+                    HStack(spacing: 4) {
                         Text("📖 法規手冊")
-                            .font(.system(size: 12, weight: .heavy, design: .monospaced))
-                        Text("RULEBOOK")
-                            .font(.system(size: 9, weight: .bold, design: .monospaced))
-                            .opacity(0.85)
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
                     }
                     .foregroundStyle(.black)
-                    .padding(.horizontal, 10)
+                    .padding(.horizontal, 9)
                     .padding(.vertical, 7)
                     .background(
                         LinearGradient(
@@ -159,10 +229,83 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
             }
+
+            // 廉潔聲望與星際廉政署稽查風險緊湊狀態膠囊列
+            HStack(spacing: 8) {
+                // ⭐ 聲望膠囊（未滿 30 為霓虹青色，達 30 以上轉為琥珀金色）
+                let repAccent = viewModel.reputation >= 30 ? neonAmber : neonCyan
+                HStack(spacing: 4) {
+                    Text("⭐ 聲望")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(repAccent)
+                    Text("\(viewModel.reputation)")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.white)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(repAccent.opacity(0.14))
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(repAccent.opacity(0.5), lineWidth: 1)
+                )
+
+                // 👁️ 稽查風險膠囊（0% 灰綠色、1%~49% 琥珀色、50% 以上閃爍亮紅色警告）
+                let risk = viewModel.auditRisk
+                let isHighRisk = risk >= 50
+                let riskColor: Color = risk == 0
+                    ? neonGreen.opacity(0.75)
+                    : (risk < 50 ? neonAmber : neonRed)
+
+                HStack(spacing: 4) {
+                    Text("👁️ 稽查風險")
+                        .font(.system(size: 10, weight: .bold, design: .monospaced))
+                        .foregroundStyle(riskColor)
+                    Text("\(risk)%")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(riskColor)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(
+                    riskColor.opacity(
+                        isHighRisk
+                            ? (isAuditWarningBlinking ? 0.32 : 0.10)
+                            : 0.14
+                    )
+                )
+                .clipShape(Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(
+                            riskColor.opacity(isHighRisk ? (isAuditWarningBlinking ? 1.0 : 0.35) : 0.5),
+                            lineWidth: isHighRisk ? 1.4 : 1
+                        )
+                )
+                .shadow(
+                    color: isHighRisk && isAuditWarningBlinking ? neonRed.opacity(0.65) : .clear,
+                    radius: 5
+                )
+
+                Spacer()
+
+                // 當聲望達到廉潔津貼門檻時，於右側顯示每日津貼預告標籤
+                if viewModel.reputation >= 30 {
+                    Text(viewModel.reputation >= 60 ? "廉潔津貼 +100" : "廉潔津貼 +50")
+                        .font(.system(size: 9, weight: .bold, design: .monospaced))
+                        .foregroundStyle(neonAmber)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(neonAmber.opacity(0.14))
+                        .clipShape(Capsule())
+                }
+            }
         }
     }
 
     // MARK: - 2. 今日速報橫幅
+    /// 摘要顯示當日星曆年份、體溫/輻射上限、關卡階段提示，以及四大動態緊急指令（封鎖星系、禁運物、暫停目的、防疫狀態）
     private var dailyDirectiveBanner: some View {
         let reg = viewModel.currentRegulation
         let originsText = reg.bannedOrigins.isEmpty
@@ -187,10 +330,12 @@ struct ContentView: View {
                     .foregroundStyle(neonCyan)
             }
 
+            // 當前天數解鎖的審查重點說明
             Text(viewModel.currentDayStageDescription)
                 .font(.system(size: 10, weight: .semibold, design: .monospaced))
                 .foregroundStyle(.white.opacity(0.8))
 
+            // 四宮格呈現當日四大動態管制指標
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
                 directiveMiniCell(
                     title: "封鎖星系",
@@ -234,6 +379,7 @@ struct ContentView: View {
         )
     }
 
+    /// 建立今日速報橫幅中的單一指令資訊小格
     private func directiveMiniCell(
         title: String,
         value: String,
@@ -270,12 +416,29 @@ struct ContentView: View {
     }
 
     // MARK: - 3. 中央電子護照終端機（雙欄網格完整呈現旅客所有數據）
+    /// 顯示受檢旅客的頭像、姓名、有機分類標籤、硬體掃描異常提示與 12 項關鍵審查數據網格
     private var travelerPassportTerminal: some View {
         let traveler = viewModel.currentTraveler
         let reg = viewModel.currentRegulation
+        // 呼叫規則引擎取得各項升級掃描儀的即時偵測結果
+        let alerts = CustomsRuleEngine.scanAlerts(for: traveler, regulation: reg)
+
+        // 檢查玩家已安裝哪些永久輔助掃描模組
+        let hasBioScanner = viewModel.purchasedUpgrades.contains(.bioScanner)
+        let hasForgeryDetector = viewModel.purchasedUpgrades.contains(.forgeryDetector)
+        let hasExpiryChecker = viewModel.purchasedUpgrades.contains(.expiryChecker)
+        let hasContrabandRadar = viewModel.purchasedUpgrades.contains(.contrabandRadar)
+
+        // 唯有「已安裝該模組」且「該指標確實違規異常」時，才會在電子護照對應欄位亮起警示燈號
+        let showTempAlert = hasBioScanner && alerts.isTempAbnormal
+        let showRadAlert = hasBioScanner && alerts.isRadiationAbnormal
+        let showForgeryAlert = hasForgeryDetector && alerts.isForgeryDetected
+        let showExpiryAlert = hasExpiryChecker && alerts.isExpired
+        let showOriginRadarAlert = hasContrabandRadar && alerts.isOriginBanned
+        let showItemRadarAlert = hasContrabandRadar && alerts.isItemBannedOrContraband
 
         return VStack(alignment: .leading, spacing: 10) {
-            // 終端標題列
+            // 終端標題列與有機體/非有機體分類標籤
             HStack {
                 HStack(spacing: 6) {
                     Image(systemName: "person.text.rectangle.fill")
@@ -294,7 +457,25 @@ struct ContentView: View {
                     .clipShape(Capsule())
             }
 
-            // 旅客頭像與姓名橫幅
+            // 若已安裝「偽造編號與邏輯掃描儀」且偵測到第二層邏輯矛盾，於護照頂部跳出琥珀色警示條
+            if showForgeryAlert, let hint = alerts.forgeryHint {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .font(.system(size: 12, weight: .bold))
+                        .foregroundStyle(.black)
+                    Text("⚠️ 偵測到邏輯矛盾：\(hint)")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(.black)
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 7)
+                .background(neonAmber)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .shadow(color: neonAmber.opacity(0.5), radius: 5)
+            }
+
+            // 旅客物種全息頭像與姓名、編號摘要橫幅
             HStack(spacing: 12) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 10)
@@ -335,9 +516,9 @@ struct ContentView: View {
             Divider()
                 .overlay(neonCyan.opacity(0.25))
 
-            // 雙欄網格：整齊呈現所有 12 項關鍵審查數據（含要求的全部 10+ 項欄位）
+            // 雙欄網格：整齊呈現所有 12 項關鍵審查數據
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                // 1. 證件編號
+                // 01. 證件編號（克隆人必須以 CLN- 開頭）
                 passportGridCell(
                     index: "01",
                     label: "證件編號 (SERIAL)",
@@ -346,7 +527,7 @@ struct ContentView: View {
                     valueColor: .white
                 )
 
-                // 2. 旅客種族
+                // 02. 旅客種族與有機分類
                 passportGridCell(
                     index: "02",
                     label: "物種分類 (SPECIES)",
@@ -355,16 +536,20 @@ struct ContentView: View {
                     valueColor: neonCyan
                 )
 
-                // 3. 來源星系
+                // 03. 來源星系（搭配違禁品與禁區雷達可自動標示封鎖區）
                 passportGridCell(
                     index: "03",
                     label: "來源星系 (ORIGIN)",
                     value: traveler.origin.shortName,
                     icon: "location.north.line.fill",
-                    valueColor: .white
+                    valueColor: showOriginRadarAlert ? neonRed : .white,
+                    badgeText: showOriginRadarAlert ? "封鎖區" : nil,
+                    badgeColor: neonRed,
+                    isAlertBackground: showOriginRadarAlert,
+                    isGlowingRedBorder: showOriginRadarAlert
                 )
 
-                // 4. 入境目的
+                // 04. 入境目的
                 passportGridCell(
                     index: "04",
                     label: "入境目的 (PURPOSE)",
@@ -373,16 +558,22 @@ struct ContentView: View {
                     valueColor: .white
                 )
 
-                // 5. 護照到期年份
+                // 05. 護照到期年份（搭配護照效期核對模組可反紅標示 EXPIRED）
                 passportGridCell(
                     index: "05",
                     label: "護照效期 (EXPIRY)",
                     value: "星曆 \(traveler.passportExpiryYear) 年",
                     icon: "calendar.badge.clock",
-                    valueColor: traveler.passportExpiryYear < reg.currentYear ? neonAmber : .white
+                    valueColor: showExpiryAlert
+                        ? neonRed
+                        : (traveler.passportExpiryYear < reg.currentYear ? neonAmber : .white),
+                    badgeText: showExpiryAlert ? "EXPIRED" : nil,
+                    badgeColor: neonRed,
+                    isAlertBackground: showExpiryAlert,
+                    isGlowingRedBorder: showExpiryAlert
                 )
 
-                // 6. 入境許可證
+                // 06. 入境許可證持有狀態
                 passportGridCell(
                     index: "06",
                     label: "入境簽證 (PERMIT)",
@@ -391,7 +582,7 @@ struct ContentView: View {
                     valueColor: traveler.hasEntryPermit ? neonGreen : neonAmber
                 )
 
-                // 7. 外交豁免令
+                // 07. 外交豁免令持有狀態
                 passportGridCell(
                     index: "07",
                     label: "外交豁免 (IMMUNITY)",
@@ -400,7 +591,7 @@ struct ContentView: View {
                     valueColor: traveler.hasDiplomaticImmunity ? neonCyan : .white.opacity(0.7)
                 )
 
-                // 8. 疫苗證明
+                // 08. 星際疫苗接種證明
                 passportGridCell(
                     index: "08",
                     label: "疫苗證明 (VACCINE)",
@@ -409,16 +600,22 @@ struct ContentView: View {
                     valueColor: traveler.hasVaccineCert ? neonGreen : neonAmber
                 )
 
-                // 9. 申報物品
+                // 09. 申報攜帶物品（搭配違禁品與禁區雷達可自動標示違禁/禁運品）
                 passportGridCell(
                     index: "09",
                     label: "申報物品 (DECLARED)",
                     value: traveler.declaredItem.shortName,
                     icon: "cube.box.fill",
-                    valueColor: traveler.declaredItem == .none ? .white : neonAmber
+                    valueColor: showItemRadarAlert
+                        ? neonRed
+                        : (traveler.declaredItem == .none ? .white : neonAmber),
+                    badgeText: showItemRadarAlert ? "違禁/禁運" : nil,
+                    badgeColor: neonRed,
+                    isAlertBackground: showItemRadarAlert,
+                    isGlowingRedBorder: showItemRadarAlert
                 )
 
-                // 10. 行李重量
+                // 10. 隨身行李重量（超過 25 kg 時以琥珀色提示注意空箱走私）
                 passportGridCell(
                     index: "10",
                     label: "行李重量 (WEIGHT)",
@@ -427,7 +624,7 @@ struct ContentView: View {
                     valueColor: traveler.baggageWeight > 25.0 ? neonAmber : .white
                 )
 
-                // 11. 生物體溫
+                // 11. 紅外線生物體溫（氣態能量體顯示 N/A；搭配生理警報器可反紅標示超標）
                 passportGridCell(
                     index: "11",
                     label: "紅外線體溫 (TEMP)",
@@ -435,18 +632,30 @@ struct ContentView: View {
                         ? "N/A (氣態無體溫)"
                         : String(format: "%.1f °C", traveler.bodyTemperature),
                     icon: "thermometer.high",
-                    valueColor: (traveler.species != .gasEntity && traveler.bodyTemperature > reg.maxAllowedTemp)
-                        ? neonAmber
-                        : neonGreen
+                    valueColor: showTempAlert
+                        ? neonRed
+                        : ((traveler.species != .gasEntity && traveler.bodyTemperature > reg.maxAllowedTemp)
+                            ? neonAmber
+                            : neonGreen),
+                    badgeText: showTempAlert ? "⚠️ 數值超標" : nil,
+                    badgeColor: neonRed,
+                    isAlertBackground: showTempAlert,
+                    isGlowingRedBorder: showTempAlert
                 )
 
-                // 12. 輻射劑量
+                // 12. 高能輻射感測劑量（搭配生理警報器可反紅標示超標）
                 passportGridCell(
                     index: "12",
                     label: "輻射感測 (RADIATION)",
                     value: String(format: "%.1f mSv", traveler.radiationLevel),
                     icon: "aqi.high",
-                    valueColor: traveler.radiationLevel > reg.maxAllowedRadiation ? neonAmber : neonGreen
+                    valueColor: showRadAlert
+                        ? neonRed
+                        : (traveler.radiationLevel > reg.maxAllowedRadiation ? neonAmber : neonGreen),
+                    badgeText: showRadAlert ? "⚠️ 數值超標" : nil,
+                    badgeColor: neonRed,
+                    isAlertBackground: showRadAlert,
+                    isGlowingRedBorder: showRadAlert
                 )
             }
         }
@@ -460,22 +669,166 @@ struct ContentView: View {
         .shadow(color: neonCyan.opacity(0.1), radius: 8)
     }
 
+    // MARK: - 3.5 加密行賄對話面板
+    /// 當違規旅客試圖行賄時顯示的私密通訊面板，提供「嚴正檢舉」與「私下收賄」兩項抉擇按鈕
+    private func encryptedBribePanel(offer: BribeOffer) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                HStack(spacing: 6) {
+                    Image(systemName: "lock.trianglebadge.exclamationmark.fill")
+                        .foregroundStyle(neonAmber)
+                    Text("⚠️ 收到私密通訊（行賄提案） // ENCRYPTED CHANNEL")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(neonAmber)
+                }
+
+                Spacer()
+
+                // 顯示賄款金額與收賄將增加的稽查風險百分比
+                HStack(spacing: 6) {
+                    Text("+\(offer.amount) ฿")
+                        .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(neonAmber.opacity(0.2))
+                        .foregroundStyle(neonAmber)
+                        .clipShape(Capsule())
+
+                    Text("風險 +\(offer.riskIncrease)%")
+                        .font(.system(size: 10, weight: .heavy, design: .monospaced))
+                        .padding(.horizontal, 7)
+                        .padding(.vertical, 2)
+                        .background(neonRed.opacity(0.22))
+                        .foregroundStyle(neonRed)
+                        .clipShape(Capsule())
+                }
+            }
+
+            // 旅客私下行賄台詞
+            Text(offer.dialogue)
+                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.95))
+                .padding(9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.black.opacity(0.42))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+            HStack(spacing: 10) {
+                // 1. 「🛡️ 嚴正檢舉（+聲望 / 降風險）」按鈕（呼叫 reportBribe()）
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        viewModel.reportBribe()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("🛡️ 嚴正檢舉（+聲望 / 降風險）")
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [neonPurple.opacity(0.85), neonCyan.opacity(0.55)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(neonPurple, lineWidth: 1.3)
+                    )
+                    .shadow(color: neonPurple.opacity(0.35), radius: 4)
+                }
+                .buttonStyle(.plain)
+
+                // 2. 「💰 私下收賄（+\(offer.amount) ฿）」按鈕（呼叫 acceptBribe()）
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        viewModel.acceptBribe()
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text("💰 私下收賄（+\(offer.amount) ฿）")
+                            .font(.system(size: 11, weight: .heavy, design: .monospaced))
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(.black)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 6)
+                    .background(
+                        LinearGradient(
+                            colors: [neonAmber, darkGoldWarning.opacity(0.85)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 9))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9)
+                            .stroke(neonAmber, lineWidth: 1.3)
+                    )
+                    .shadow(color: darkGoldWarning.opacity(0.35), radius: 4)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(12)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.14, green: 0.11, blue: 0.04), cardBackground],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(
+                    neonAmber.opacity(0.85),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [6, 4])
+                )
+        )
+        .shadow(color: neonAmber.opacity(0.18), radius: 6)
+    }
+
+    /// 建立電子護照網格中的單一資料欄位卡片（支援升級模組異常紅框與徽章高亮）
     private func passportGridCell(
         index: String,
         label: String,
         value: String,
         icon: String,
-        valueColor: Color
+        valueColor: Color,
+        badgeText: String? = nil,
+        badgeColor: Color = .red,
+        isAlertBackground: Bool = false,
+        isGlowingRedBorder: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
                 Text(index)
                     .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                    .foregroundStyle(neonCyan.opacity(0.8))
+                    .foregroundStyle(isGlowingRedBorder ? neonRed : neonCyan.opacity(0.8))
                 Text(label)
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isGlowingRedBorder ? neonRed.opacity(0.9) : .secondary)
                     .lineLimit(1)
+                Spacer(minLength: 0)
+                if let badgeText {
+                    Text(badgeText)
+                        .font(.system(size: 8, weight: .heavy, design: .monospaced))
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(badgeColor)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 3))
+                }
             }
 
             HStack(spacing: 5) {
@@ -491,18 +844,27 @@ struct ContentView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)
-        .background(Color.black.opacity(0.36))
+        .background(
+            isAlertBackground
+                ? neonRed.opacity(0.22)
+                : Color.black.opacity(0.36)
+        )
         .clipShape(RoundedRectangle(cornerRadius: 8))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .stroke(
+                    isGlowingRedBorder ? neonRed : Color.white.opacity(0.08),
+                    lineWidth: isGlowingRedBorder ? 1.5 : 1
+                )
         )
+        .shadow(color: isGlowingRedBorder ? neonRed.opacity(0.55) : .clear, radius: 4)
     }
 
     // MARK: - 4. 底部判決區
+    /// 顯示上一位旅客審查結果的法規回饋面板，以及「拒簽（DENY）」與「核准（APPROVE）」兩顆主操作按鈕
     private var bottomVerdictSection: some View {
         VStack(spacing: 8) {
-            // 上一題詳細對錯原因與觸發法規層級
+            // 上一題詳細對錯原因與觸發法規層級回饋橫幅
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: feedbackIconName)
                     .font(.system(size: 16, weight: .bold))
@@ -511,21 +873,26 @@ struct ContentView: View {
 
                 Text(viewModel.feedbackMessage)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(viewModel.isLastActionBribe ? neonAmber : .white)
                     .fixedSize(horizontal: false, vertical: true)
 
                 Spacer(minLength: 0)
             }
             .padding(10)
-            .background(cardBackground)
+            .background(
+                viewModel.isLastActionBribe
+                    ? neonAmber.opacity(0.14)
+                    : cardBackground
+            )
             .clipShape(RoundedRectangle(cornerRadius: 10))
             .overlay(
                 RoundedRectangle(cornerRadius: 10)
                     .stroke(feedbackAccentColor.opacity(0.65), lineWidth: 1.2)
             )
 
-            // 「拒簽（DENY）」與「核准（APPROVE）」按鈕
+            // 「拒簽（DENY）」與「核准（APPROVE）」主裁決按鈕
             HStack(spacing: 12) {
+                // 拒簽按鈕
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.processDecision(playerApproved: false)
@@ -561,6 +928,7 @@ struct ContentView: View {
                 }
                 .buttonStyle(.plain)
 
+                // 核准按鈕
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         viewModel.processDecision(playerApproved: true)
@@ -599,14 +967,22 @@ struct ContentView: View {
         }
     }
 
+    /// 根據上一次裁決結果（正確、失誤、收賄或初始狀態）決定回饋面板的主題色
     private var feedbackAccentColor: Color {
+        if viewModel.isLastActionBribe {
+            return neonAmber
+        }
         guard let isCorrect = viewModel.lastDecisionCorrect else {
             return neonCyan
         }
         return isCorrect ? neonGreen : neonRed
     }
 
+    /// 根據上一次裁決結果決定回饋面板左側的 SF Symbols 圖示
     private var feedbackIconName: String {
+        if viewModel.isLastActionBribe {
+            return "exclamationmark.shield.fill"
+        }
         guard let isCorrect = viewModel.lastDecisionCorrect else {
             return "terminal.fill"
         }
@@ -614,26 +990,37 @@ struct ContentView: View {
     }
 
     // MARK: - 5. Game Over 結算畫面
+    /// 當玩家因累積 3 次失誤或貪污遭廉政署逮捕時顯示的全螢幕結算遮罩
     private var gameOverOverlay: some View {
-        ZStack {
-            Color.black.opacity(0.85)
+        let isCorruption = viewModel.gameOverReason == .firedForCorruption
+        let titleText = isCorruption
+            ? "🚨 星際廉政署逮捕令：因貪污受賄遭到撤職"
+            : "審查失職：終止合約"
+        let descriptionText = isCorruption
+            ? "星際廉政署（INTERNAL AFFAIRS）已查獲您私下收取違規旅客賄賂並偽造放行紀錄的鐵證，即刻撤銷職位並移送星際法庭。"
+            : "您已累積 3 次重大海關審查失誤，深度邊境安全總署已終止您的聘僱合約並撤銷審查權限。"
+
+        return ZStack {
+            Color.black.opacity(0.88)
                 .ignoresSafeArea()
 
             VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle.fill")
+                Image(systemName: isCorruption ? "lock.shield.fill" : "exclamationmark.triangle.fill")
                     .font(.system(size: 44))
                     .foregroundStyle(neonRed)
                     .shadow(color: neonRed.opacity(0.8), radius: 10)
 
-                Text("審查官停職處分 // TERMINATED")
-                    .font(.system(size: 19, weight: .heavy, design: .monospaced))
+                Text(titleText)
+                    .font(.system(size: 17, weight: .heavy, design: .monospaced))
                     .foregroundStyle(neonRed)
+                    .multilineTextAlignment(.center)
 
-                Text("您已累積 3 次重大海關審查失誤，深度邊境安全總署已撤銷您的審查權限。")
+                Text(descriptionText)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.85))
                     .multilineTextAlignment(.center)
 
+                // 顯示最後一題導致遊戲結束的詳細回饋紀錄
                 Text(viewModel.feedbackMessage)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
                     .foregroundStyle(neonAmber)
@@ -642,13 +1029,14 @@ struct ContentView: View {
                     .background(Color.black.opacity(0.45))
                     .clipShape(RoundedRectangle(cornerRadius: 8))
 
-                HStack(spacing: 28) {
+                // 最終統計數據（執勤天數、最終積分、廉潔聲望）
+                HStack(spacing: 22) {
                     VStack(spacing: 4) {
                         Text("執勤天數")
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Text("DAY \(viewModel.day)")
-                            .font(.system(size: 20, weight: .heavy, design: .monospaced))
+                            .font(.system(size: 18, weight: .heavy, design: .monospaced))
                             .foregroundStyle(neonCyan)
                     }
 
@@ -657,12 +1045,22 @@ struct ContentView: View {
                             .font(.system(size: 11, design: .monospaced))
                             .foregroundStyle(.secondary)
                         Text("\(viewModel.score)")
-                            .font(.system(size: 20, weight: .heavy, design: .monospaced))
+                            .font(.system(size: 18, weight: .heavy, design: .monospaced))
                             .foregroundStyle(neonAmber)
+                    }
+
+                    VStack(spacing: 4) {
+                        Text("廉潔聲望")
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                        Text("\(viewModel.reputation)")
+                            .font(.system(size: 18, weight: .heavy, design: .monospaced))
+                            .foregroundStyle(neonGreen)
                     }
                 }
                 .padding(.vertical, 4)
 
+                // 重新開始新局按鈕
                 Button {
                     withAnimation(.spring(duration: 0.3)) {
                         viewModel.restartGame()
@@ -695,13 +1093,19 @@ struct ContentView: View {
 }
 
 // MARK: - 星際法規手冊彈出視窗（Rulebook Sheet）
+/// 供玩家隨時查閱「六層優先級漏斗法規」與「今日動態公告 & 8 大物種有機分類表」的獨立視窗
 struct RulebookSheetView: View {
+    /// 當日生效的動態海關法規
     let regulation: DailyRegulation
+    /// 當前執勤天數
     let day: Int
 
+    /// 用於關閉彈出視窗的環境變數
     @Environment(\.dismiss) private var dismiss
+    /// 當前選中的分頁索引（0 為六層優先級法規，1 為今日動態公告與物種對照表）
     @State private var selectedTab: Int = 0
 
+    // 法規手冊專屬配色定義
     private let sheetBackground = Color(red: 0.04, green: 0.06, blue: 0.11)
     private let cardBackground = Color(red: 0.08, green: 0.12, blue: 0.19)
     private let neonCyan = Color(red: 0.00, green: 0.90, blue: 0.96)
@@ -716,6 +1120,7 @@ struct RulebookSheetView: View {
                 sheetBackground.ignoresSafeArea()
 
                 VStack(spacing: 12) {
+                    // 頂部分頁切換器
                     Picker("法規手冊分頁", selection: $selectedTab) {
                         Text("六層優先級法規").tag(0)
                         Text("今日動態公告 & 物種表").tag(1)
@@ -740,7 +1145,7 @@ struct RulebookSheetView: View {
                     Button("關閉") {
                         dismiss()
                     }
-                    .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    .font(.headline.weight(.bold).monospaced())
                     .foregroundStyle(neonCyan)
                 }
             }
@@ -749,15 +1154,17 @@ struct RulebookSheetView: View {
     }
 
     // MARK: 分頁 1：常駐六層漏斗法規
+    /// 完整列出由第一層至第六層的海關審查優先級規則與所有特殊豁免條款
     private var sixLayerRulesContent: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             Text("⚠️ 審查鐵則：請嚴格由【第一層】往【第六層】依序比對，高優先級直接決定結果！")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(.body.weight(.bold).monospaced())
                 .foregroundStyle(neonAmber)
-                .padding(10)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(neonAmber.opacity(0.12))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .background(neonAmber.opacity(0.14))
+                .clipShape(RoundedRectangle(cornerRadius: 10))
 
             ruleLayerCard(
                 badge: "PRIORITY 01",
@@ -835,12 +1242,13 @@ struct RulebookSheetView: View {
     }
 
     // MARK: 分頁 2：今日動態公告與物種有機對照表
+    /// 顯示當日生效的動態海關法規完整列表，以及 8 大物種是否屬於有機生命體的對照表
     private var dailyAndSpeciesContent: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // 今日動態公告詳情
-            VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 16) {
+            // 今日動態公告詳情卡片
+            VStack(alignment: .leading, spacing: 10) {
                 Text("📡 今日動態海關公告 (DAY \(day))")
-                    .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                    .font(.title3.weight(.heavy).monospaced())
                     .foregroundStyle(neonAmber)
 
                 Divider().overlay(neonAmber.opacity(0.3))
@@ -869,7 +1277,7 @@ struct RulebookSheetView: View {
                     value: regulation.requireVaccine ? "已啟動（所有有機體必須持有疫苗證明）" : "未啟動（免驗疫苗證明）"
                 )
             }
-            .padding(14)
+            .padding(16)
             .background(cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -877,10 +1285,10 @@ struct RulebookSheetView: View {
                     .stroke(neonAmber.opacity(0.45), lineWidth: 1.2)
             )
 
-            // 8 大物種有機/非有機與特性一覽表
-            VStack(alignment: .leading, spacing: 8) {
+            // 8 大物種有機/非有機與特性一覽表卡片
+            VStack(alignment: .leading, spacing: 10) {
                 Text("🧬 星際物種生理分類與特殊規則")
-                    .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                    .font(.title3.weight(.heavy).monospaced())
                     .foregroundStyle(neonCyan)
 
                 Divider().overlay(neonCyan.opacity(0.3))
@@ -888,27 +1296,32 @@ struct RulebookSheetView: View {
                 ForEach(Species.allCases) { species in
                     HStack(spacing: 10) {
                         Image(systemName: species.symbolName)
+                            .font(.headline.weight(.bold))
                             .foregroundStyle(neonCyan)
-                            .frame(width: 22)
+                            .frame(width: 26)
 
                         Text(species.displayName)
-                            .font(.system(size: 12, weight: .bold, design: .monospaced))
+                            .font(.body.weight(.bold).monospaced())
                             .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
 
                         Spacer()
 
                         Text(species.organicLabel)
-                            .font(.system(size: 11, weight: .bold, design: .monospaced))
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background((species.isOrganic ? neonGreen : neonPurple).opacity(0.2))
+                            .font(.subheadline.weight(.bold).monospaced())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 4)
+                            .background((species.isOrganic ? neonGreen : neonPurple).opacity(0.22))
                             .foregroundStyle(species.isOrganic ? neonGreen : neonPurple)
                             .clipShape(Capsule())
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.75)
                     }
-                    .padding(.vertical, 4)
+                    .padding(.vertical, 5)
                 }
             }
-            .padding(14)
+            .padding(16)
             .background(cardBackground)
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(
@@ -919,6 +1332,7 @@ struct RulebookSheetView: View {
         .padding(16)
     }
 
+    /// 建立單一法規層級說明卡片
     private func ruleLayerCard(
         badge: String,
         title: String,
@@ -926,12 +1340,12 @@ struct RulebookSheetView: View {
         accent: Color,
         rules: [String]
     ) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             HStack {
                 Text(badge)
-                    .font(.system(size: 10, weight: .heavy, design: .monospaced))
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
+                    .font(.footnote.weight(.heavy).monospaced())
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 3)
                     .background(accent.opacity(0.2))
                     .foregroundStyle(accent)
                     .clipShape(Capsule())
@@ -939,26 +1353,29 @@ struct RulebookSheetView: View {
                 Spacer()
 
                 Text(subtitle)
-                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+                    .font(.footnote.weight(.semibold).monospaced())
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
             }
 
             Text(title)
-                .font(.system(size: 14, weight: .heavy, design: .monospaced))
+                .font(.title3.weight(.heavy).monospaced())
                 .foregroundStyle(accent)
+                .fixedSize(horizontal: false, vertical: true)
 
             Divider().overlay(accent.opacity(0.3))
 
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
                 ForEach(rules, id: \.self) { rule in
                     Text(rule)
-                        .font(.system(size: 12, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.9))
+                        .font(.body.weight(.medium).monospaced())
+                        .foregroundStyle(.white.opacity(0.95))
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
-        .padding(12)
+        .padding(14)
         .background(cardBackground)
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(
@@ -967,13 +1384,14 @@ struct RulebookSheetView: View {
         )
     }
 
+    /// 建立今日動態公告中的單列項目文字
     private func bulletRow(label: String, value: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Text("▪ \(label)：")
-                .font(.system(size: 12, weight: .bold, design: .monospaced))
+                .font(.body.weight(.bold).monospaced())
                 .foregroundStyle(neonCyan)
             Text(value)
-                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                .font(.body.weight(.medium).monospaced())
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
