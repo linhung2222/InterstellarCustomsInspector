@@ -25,21 +25,21 @@
 
 > **Welcome to Star Year 3026.** You are the Chief Customs Inspector at the Interstellar Border Terminal. Cross-examine 12 biometric and passport data points against a 6-layer priority regulation funnel, catch forged IDs and smugglers, resist or accept encrypted bribes, and upgrade your terminal hardware before the Interstellar Anti-Corruption Bureau audits your records!
 
-### 📸 Screenshots & Gameplay GIF
+### 📸 App Screenshots
 
 <div align="center">
 
-| 🎥 Gameplay Demo (GIF) | 🖥️ Main Inspection Terminal |
-| :---: | :---: |
-| <img src="Screenshots/demo.gif" alt="Gameplay Demo GIF" width="260"/> | <img src="Screenshots/main_terminal.png" alt="Main Terminal" width="260"/> |
+| 🖥️ Main Inspection Terminal | 📖 6-Layer Regulation Manual | 🧬 Dynamic Briefing & Species |
+| :---: | :---: | :---: |
+| <img src="Screenshots/main_terminal.png" alt="Main Terminal" width="240"/> | <img src="Screenshots/manual_rules.png" alt="6-Layer Priority Rules" width="240"/> | <img src="Screenshots/manual_species.png" alt="Dynamic Briefing and Species" width="240"/> |
 
-| 📖 6-Layer Regulation Manual | 🧬 Dynamic Briefing & Species | 💰 Daily Settlement & Shop | 🛠️ Hardware Upgrades |
-| :---: | :---: | :---: | :---: |
-| <img src="Screenshots/manual_rules.png" alt="6-Layer Priority Rules" width="200"/> | <img src="Screenshots/manual_species.png" alt="Dynamic Briefing and Species" width="200"/> | <img src="Screenshots/daily_settlement.png" alt="Daily Shift Settlement" width="200"/> | <img src="Screenshots/upgrade_shop.png" alt="Terminal Upgrade Shop" width="200"/> |
+| 💰 Daily Settlement & Receipt | 🛠️ Terminal Upgrade Shop |
+| :---: | :---: |
+| <img src="Screenshots/daily_settlement.png" alt="Daily Shift Settlement" width="240"/> | <img src="Screenshots/upgrade_shop.png" alt="Terminal Upgrade Shop" width="240"/> |
 
 </div>
 
-> 💡 *Tip: Place your recorded gameplay GIF and screenshots inside the `Screenshots/` folder using the filenames above (`demo.gif`, `main_terminal.png`, `manual_rules.png`, `manual_species.png`, `daily_settlement.png`, `upgrade_shop.png`).*
+> 💡 *Tip: Place your screenshots inside the `Screenshots/` folder using the filenames above (`main_terminal.png`, `manual_rules.png`, `manual_species.png`, `daily_settlement.png`, `upgrade_shop.png`).*
 
 ---
 
@@ -112,21 +112,21 @@ Always inspect from **Layer 1 down to Layer 6**. The highest triggered layer det
 
 > **歡迎來到星曆 3026 年。** 您是星際邊境海關終端機的首席審查員。在每日執勤中，您必須交叉比對旅客的 **12 項電子護照與生物感測數據**，嚴格執行 **「六層漏斗式優先級法規」**，揪出偽造證件與空箱走私客、在私密行賄與廉政署稽查之間做出抉擇，並採購終端機硬體升級模組以應對全面戒嚴！
 
-### 📸 遊戲畫面截圖與操作 GIF
+### 📸 遊戲畫面截圖
 
 <div align="center">
 
-| 🎥 實機操作展示 (GIF) | 🖥️ 海關審查主終端機 |
-| :---: | :---: |
-| <img src="Screenshots/demo.gif" alt="實機操作 GIF" width="260"/> | <img src="Screenshots/main_terminal.png" alt="海關審查主終端機" width="260"/> |
+| 🖥️ 海關審查主終端機 | 📖 六層優先級法規手冊 | 🧬 動態公告與物種分類表 |
+| :---: | :---: | :---: |
+| <img src="Screenshots/main_terminal.png" alt="海關審查主終端機" width="240"/> | <img src="Screenshots/manual_rules.png" alt="六層優先級法規手冊" width="240"/> | <img src="Screenshots/manual_species.png" alt="今日動態公告與物種表" width="240"/> |
 
-| 📖 六層優先級法規手冊 | 🧬 動態公告與物種分類表 | 💰 每日值勤結算報告 | 🛠️ 終端機硬體升級商店 |
-| :---: | :---: | :---: | :---: |
-| <img src="Screenshots/manual_rules.png" alt="六層優先級法規手冊" width="200"/> | <img src="Screenshots/manual_species.png" alt="今日動態公告與物種表" width="200"/> | <img src="Screenshots/daily_settlement.png" alt="第1天值勤結算報告" width="200"/> | <img src="Screenshots/upgrade_shop.png" alt="海關終端機升級商店" width="200"/> |
+| 💰 每日值勤結算報告 | 🛠️ 終端機硬體升級商店 |
+| :---: | :---: |
+| <img src="Screenshots/daily_settlement.png" alt="第1天值勤結算報告" width="240"/> | <img src="Screenshots/upgrade_shop.png" alt="海關終端機升級商店" width="240"/> |
 
 </div>
 
-> 💡 *提示：請在專案根目錄建立 `Screenshots/` 資料夾，並將您的操作錄影 GIF 與上述截圖依檔名（`demo.gif`、`main_terminal.png`、`manual_rules.png`、`manual_species.png`、`daily_settlement.png`、`upgrade_shop.png`）放入即可完整顯示。*
+> 💡 *提示：請在專案根目錄建立 `Screenshots/` 資料夾，並將上述 5 張截圖依檔名（`main_terminal.png`、`manual_rules.png`、`manual_species.png`、`daily_settlement.png`、`upgrade_shop.png`）放入即可完整顯示。*
 
 ---
 
